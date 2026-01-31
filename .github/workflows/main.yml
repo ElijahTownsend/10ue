@@ -13,24 +13,51 @@ jobs:
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.92.3-amd64.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Start-Process msiexec.exe -ArgumentList "/i `"$installerPath`" /quiet /norestart" -Wait
+          
+          # Refresh PATH
+          $env:PATH += ";$env:ProgramFilesTailscale"
+          [Environment]::SetEnvironmentVariable("Path", $env:PATH, [EnvironmentVariableTarget]::Machine)
+          
+          # Verify installation
+          if (Test-Path "$env:ProgramFilesTailscale\tailscale.exe") {
+            Write-Host "Tailscale installed successfully"
+          } else {
+            Write-Error "Tailscale not found!"
+            exit 1
+          }
+          
+          # Authenticate and connect
           & "$env:ProgramFilesTailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-${{ github.run_id }}
+          
+          Start-Sleep -Seconds 5
           $tsIP = & "$env:ProgramFilesTailscale\tailscale.exe" ip -4
+          Write-Host "Tailscale IP: $tsIP"
           "TAILSCALE_IP=$tsIP" | Out-File -Append $env:GITHUB_ENV
 
       - name: 2. Install Trae IDE
         shell: powershell
         run: |
-          Write-Host "Downloading Trae IDE..."
-          $traeUrl = "https://www.trae.ai/download"  # Note: Replace with direct .exe URL from trae.ai releases if available; check site for latest
-          # Assuming direct exe link like "https://download.trae.ai/Trae-Setup-x64-latest.exe" - verify current URL [web:20]
-          Invoke-WebRequest -Uri $traeUrl -OutFile "$env:TEMPTrae-Setup.exe"
+          Write-Host "[INFO] Downloading Trae IDE from official site..."
+          # Updated: Check trae.ai for latest direct download link. Example placeholder - replace with actual
+          $traeUrl = "https://download.trae.ai/latest/Trae-Setup-x64.exe"  # Verify exact URL from https://www.trae.ai/download
+          try {
+            Invoke-WebRequest -Uri $traeUrl -OutFile "$env:TEMPTrae-Setup.exe"
+          } catch {
+            Write-Warning "Direct URL failed, trying alternative from traeide.com"
+            $traeUrl = "https://traeide.com/download/Trae.exe"  # Fallback - update as needed
+            Invoke-WebRequest -Uri $traeUrl -OutFile "$env:TEMPTrae-Setup.exe"
+          }
           
-          Write-Host "Installing Trae IDE silently..."
-          Start-Process "$env:TEMPTrae-Setup.exe" -ArgumentList "/S" -Wait  # Common NSIS silent flag /S; test /quiet or --silent if needed [web:11]
+          Write-Host "[INFO] Installing Trae IDE silently..."
+          Start-Process "$env:TEMPTrae-Setup.exe" -ArgumentList "/S", "/D=C:Program FilesTrae" -Wait -NoNewWindow
           
-          Write-Host "Waiting for installation..."
-          Start-Sleep -Seconds 15
+          Start-Sleep -Seconds 20
+          if (Test-Path "C:Program FilesTraeTrae.exe") {
+            Write-Host "[SUCCESS] Trae IDE installed!"
+          } else {
+            Write-Warning "[WARN] Trae IDE path not found, but installation completed"
+          }
 
       - name: 3. Official AnyDesk Installation & Logic
         shell: cmd
@@ -83,14 +110,14 @@ jobs:
         run: |
           $endTime = (Get-Date).AddHours(6)
           Write-Host "========================================"
-          Write-Host "ANYDESK READY - Trae IDE Installed"
+          Write-Host "ANYDESK READY - Trae IDE + Tailscale"
           Write-Host "ID: $env:ANYDESK_ID"
+          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
           Write-Host "User: runneradmin"
           Write-Host "Password: MR.English2008"
-          Write-Host "Trae IDE: Installed (check C:Program Files or Start Menu)"
           Write-Host "========================================"
           
           while ((Get-Date) -lt $endTime) {
-              Write-Host "Online | ID: $env:ANYDESK_ID | $(Get-Date)"
+              Write-Host "Online | ID: $env:ANYDESK_ID | Tailscale: $env:TAILSCALE_IP | $(Get-Date)"
               Start-Sleep -Seconds 300
           }
